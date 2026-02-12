@@ -1,31 +1,38 @@
+import os
+import requests
 import tensorflow as tf
-import numpy as np
 from tensorflow.keras.models import load_model
-from PIL import Image
-import io
-
 from data.preprocessing import preprocess_image
 
 MODEL_PATH = "models/cnn_pneumonia_best.h5"
+MODEL_URL = "https://huggingface.co/omarhatem22/xray-pneumonia-model/resolve/main/cnn_pneumonia_best.h5"
 
-# Load model once at startup
+# Download model if not exists
+if not os.path.exists(MODEL_PATH):
+    print("Downloading model from HuggingFace...")
+    os.makedirs("models", exist_ok=True)
+
+    response = requests.get(MODEL_URL)
+    with open(MODEL_PATH, "wb") as f:
+        f.write(response.content)
+
+    print("Model downloaded successfully.")
+
+# Load model once
 model = load_model(MODEL_PATH)
 
+
 def predict(image_bytes: bytes):
+    import numpy as np
+    from PIL import Image
+    import io
 
-    # Convert bytes → PIL
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-
-    # Convert to numpy
     image = np.array(image)
 
-    # Apply same preprocessing as training
     image = preprocess_image(image)
-
-    # Add batch dimension
     image = tf.expand_dims(image, axis=0)
 
-    # Predict
     prob = model.predict(image, verbose=0)[0][0]
 
     if prob > 0.5:
