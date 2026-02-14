@@ -1,15 +1,18 @@
 from fastapi import FastAPI, UploadFile, HTTPException, Request
 from fastapi.responses import JSONResponse
+from logging.handlers import RotatingFileHandler
 import logging
 import os
 import time
-from logging.handlers import RotatingFileHandler
 
 from inference import predict
 
+
 app = FastAPI(title="Chest X-ray Pneumonia API")
 
-# ---------------- LOGGING CONFIG ----------------
+# ======================================================
+# LOGGING CONFIGURATION
+# ======================================================
 
 if not os.path.exists("logs"):
     os.makedirs("logs")
@@ -17,47 +20,96 @@ if not os.path.exists("logs"):
 logger = logging.getLogger("xray-api")
 logger.setLevel(logging.INFO)
 
-formatter = logging.Formatter(
-    "%(asctime)s - %(levelname)s - %(message)s"
-)
+# Prevent duplicate handlers (important in reload)
+if not logger.handlers:
 
-# Console handler
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(formatter)
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+    )
 
-# File handler (rotating)
-file_handler = RotatingFileHandler(
-    "logs/app.log",
-    maxBytes=5 * 1024 * 1024,  # 5MB
-    backupCount=3
-)
-file_handler.setFormatter(formatter)
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
 
-logger.addHandler(console_handler)
-logger.addHandler(file_handler)
+    # Rotating file handler (5MB per file, keep 3 backups)
+    file_handler = RotatingFileHandler(
+        "logs/app.log",
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3
+    )
+    file_handler.setFormatter(formatter)
 
-# ---------------- CONSTANTS ----------------
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+
+
+# ======================================================
+# CONSTANTS
+# ======================================================
 
 ALLOWED_TYPES = {"image/jpeg", "image/png"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 
-# ---------------- HEALTH ENDPOINT ----------------
+# ======================================================
+# MIDDLEWARE - Request Logging
+# ======================================================
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+
+    response = await call_next(request)
+
+    duration = time.time() - start_time
+
+    logger.info(
+        f"{request.method} {request.url.path} "
+        f"status={response.status_code} "
+        f"duration={duration:.4f}s "
+        f"client={request.client.host}"
+    )
+
+    return response
+
+
+# ======================================================
+# GLOBAL EXCEPTION HANDLER
+# ======================================================
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(
+        f"Unhandled error on {request.method} {request.url.path}: {str(exc)}",
+        exc_info=True
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal Server Error"}
+    )
+
+
+# ======================================================
+# HEALTH CHECK ENDPOINT
+# ======================================================
 
 @app.get("/health")
 def health():
-    return {"status": "running"}
+    return {
+        "status": "ok",
+        "service": "xray-api",
+        "version": "v1"
+    }
 
 
-# ---------------- PREDICT ENDPOINT ----------------
+# ======================================================
+# PREDICT ENDPOINT
+# ======================================================
 
 @app.post("/predict")
 async def predict_xray(file: UploadFile, request: Request):
 
-    start_time = time.time()
-
-    logger.info(f"Incoming request from {request.client.host}")
-    logger.info(f"File received: {file.filename}")
+    logger.info(f"Prediction request received: filename={file.filename}")
 
     # Validate content type
     if file.content_type not in ALLOWED_TYPES:
@@ -78,26 +130,29 @@ async def predict_xray(file: UploadFile, request: Request):
         )
 
     try:
+        start_time = time.time()
+
         result = predict(image_bytes)
 
         latency = time.time() - start_time
 
         logger.info(
-            f"Prediction: {result['prediction']} | "
-            f"Confidence: {result['confidence']:.4f} | "
-            f"Latency: {latency:.3f}s"
+            f"Prediction={result['prediction']} "
+            f"confidence={result['confidence']:.4f} "
+            f"latency={latency:.3f}s"
         )
 
         return {
             "prediction": result["prediction"],
             "confidence": result["confidence"],
             "model_version": "v1",
-            "threshold": 0.5
+            "threshold": 0.5,
+            "latency_seconds": round(latency, 4)
         }
 
     except Exception as e:
-        logger.error(f"Prediction failed: {str(e)}")
-        return JSONResponse(
+        logger.error("Prediction failed.", exc_info=True)
+        raise HTTPException(
             status_code=500,
-            content={"error": "Prediction failed."}
+            detail="Prediction failed."
         )
