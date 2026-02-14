@@ -9,7 +9,7 @@ from config import (
     TRAIN_BATCH_SIZE, VAL_BATCH_SIZE, TEST_BATCH_SIZE,
     BEST_MODEL_PATH, FINAL_MODEL_PATH
 )
-from data.preprocessing import preprocess_image
+from core.preprocessing import preprocess_image
 
 # ===================== GENERATORS =====================
 

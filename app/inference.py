@@ -2,7 +2,7 @@ import os
 import requests
 import tensorflow as tf
 from tensorflow.keras.models import load_model
-from data.preprocessing import preprocess_image
+from core.preprocessing import preprocess_image
 
 MODEL_PATH = "models/cnn_pneumonia_best.h5"
 MODEL_URL = "https://huggingface.co/omarhatem22/xray-pneumonia-model/resolve/main/cnn_pneumonia_best.h5"

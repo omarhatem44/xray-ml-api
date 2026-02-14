@@ -5,7 +5,7 @@ import logging
 import os
 import time
 
-from inference import predict
+from app.inference import predict
 
 
 app = FastAPI(title="Chest X-ray Pneumonia API")

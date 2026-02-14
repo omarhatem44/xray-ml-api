@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from config import TEST_DIR, TEST_BATCH_SIZE, BEST_MODEL_PATH
-from data.preprocessing import preprocess_image
+from core.preprocessing import preprocess_image
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 
